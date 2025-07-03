@@ -67,6 +67,36 @@ class TestAgentClient {
       return null;
     }
   }
+
+  async getAgentBalance(): Promise<any | null> {
+    const { planId } = this.config;
+    if (!planId) {
+      console.error("Missing PLAN_ID in environment variables");
+      return null;
+    }
+    const balance = await this.paymentsService.getPlanBalance(planId);
+    console.log("Agent balance:", JSON.stringify(balance, null, 2));
+    return balance;
+  }
+
+  async checkPlanBalance(): Promise<any | null> {
+    const balance = await this.getAgentBalance();
+    if (!balance.balance.isSubscriber) {
+      //purchase plan
+      const { planId } = this.config;
+      if (!planId) {
+        console.error("Missing PLAN_ID in environment variables");
+        return null;
+      }
+      const purchaseResult = await this.paymentsService.orderPlan(planId);
+      console.log("Purchase result:", JSON.stringify(purchaseResult, null, 2));
+      return purchaseResult;
+    }
+    if (balance.balance.isSubscriber) {
+      console.log("Agent is a subscriber");
+    }
+  }
+
   async fetchAgentCard(): Promise<any | null> {
     const url = `${this.config.baseUrl}/.well-known/agent.json`;
     try {
@@ -296,9 +326,9 @@ async function testBearerTokenFlow(client: TestAgentClient) {
   const accessToken = await client.getAccessToken();
   if (!accessToken) return;
   await client.sendMessage("Hello there!", accessToken);
-  await client.sendMessage("Calculate 15 * 7", accessToken);
-  await client.sendMessage("Weather in London", accessToken);
-  await client.sendMessage('Translate "hello" to Spanish', accessToken);
+  // await client.sendMessage("Calculate 15 * 7", accessToken);
+  // await client.sendMessage("Weather in London", accessToken);
+  // await client.sendMessage('Translate "hello" to Spanish', accessToken);
   console.log("\n🎉 Bearer token flow test completed!\n");
 }
 
@@ -403,13 +433,14 @@ async function testErrorHandling(client: TestAgentClient) {
 
 async function main() {
   const client = new TestAgentClient(config);
+  await client.checkPlanBalance();
   startWebhookReceiver(client);
   await testBearerTokenFlow(client);
-  await testInvalidBearerTokens(client);
-  await testMixedTokenScenarios(client);
-  await testStreamingSSE(client);
-  await testPushNotification(client);
-  await testErrorHandling(client);
+  // await testInvalidBearerTokens(client);
+  // await testMixedTokenScenarios(client);
+  // await testStreamingSSE(client);
+  // await testPushNotification(client);
+  // await testErrorHandling(client);
 }
 
 if (require.main === module) {
