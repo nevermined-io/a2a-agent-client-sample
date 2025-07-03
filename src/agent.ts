@@ -21,7 +21,6 @@ import type {
   ExecutionEventBus,
   AgentExecutor,
   RequestContext,
-  Task,
 } from "@nevermined-io/payments";
 import { v4 as uuidv4 } from "uuid";
 
@@ -541,7 +540,7 @@ class Executor implements AgentExecutor {
     eventBus: ExecutionEventBus
   ): Promise<TaskHandlerResult> {
     // Emit streaming messages every second for 60 seconds
-    const totalMessages = 60;
+    const totalMessages = 10;
     const delayMs = 1000;
     const taskId = context?.taskId;
     const contextId = context?.contextId;
@@ -952,6 +951,7 @@ paymentsService.a2a.start({
   executor: new Executor(),
   port: serverConfig.port,
   basePath: "/a2a/",
+  asyncExecution: true,
 });
 
 console.log("🚀 A2A Payments Agent started successfully!");

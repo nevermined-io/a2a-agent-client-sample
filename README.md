@@ -9,7 +9,7 @@ This example demonstrates how to use the Nevermined payments library with the Ag
 - **Credit Burning**: Burns the credits specified in the result after successful execution.
 - **Push Notifications**: Supports the A2A standard flow for push notification configuration and delivery.
 - **Asynchronous Task Handling**: Supports intermediate and final state events, compatible with polling and streaming.
-- **Unified Agent/Client**: There is a single agent and client implementation (no "advanced" or "simple" split).
+- **Unified Agent/Client**: There is a single agent and client implementation.
 
 ## Project Structure
 

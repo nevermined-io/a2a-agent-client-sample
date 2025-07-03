@@ -393,7 +393,7 @@ async function testPushNotification(client: TestAgentClient) {
   }
   console.log(`Push notification config set for taskId: ${taskId}`);
   console.log(
-    "\n✅ Push notification test: config set. Check your webhook receiver after task completion.\n"
+    "\n✅ Push notification test: config set. Check webhook receiver after task completion.\n"
   );
 }
 
