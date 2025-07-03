@@ -951,7 +951,7 @@ paymentsService.a2a.start({
   executor: new Executor(),
   port: serverConfig.port,
   basePath: "/a2a/",
-  asyncExecution: true,
+  asyncExecution: process.env.ASYNC_EXECUTION === "true",
 });
 
 console.log("🚀 A2A Payments Agent started successfully!");

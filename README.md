@@ -30,6 +30,7 @@ PUBLISHER_API_KEY=your_publisher_api_key_here
 SUBSCRIBER_API_KEY=your_subscriber_api_key_here
 AGENT_ID=your_agent_id_here
 PLAN_ID=your_plan_id_here
+ASYNC_EXECUTION=true if the agent supports async
 ```
 
 ### 2. Build and Run the Agent
@@ -121,6 +122,8 @@ const taskId = response?.result?.id;
 ```
 
 ### Associating Push Notification Config
+
+This functionality will work only if process.env.ASYNC_EXECUTION is set to true
 
 ```typescript
 const pushNotification = {

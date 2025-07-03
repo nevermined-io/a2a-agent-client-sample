@@ -326,9 +326,9 @@ async function testBearerTokenFlow(client: TestAgentClient) {
   const accessToken = await client.getAccessToken();
   if (!accessToken) return;
   await client.sendMessage("Hello there!", accessToken);
-  // await client.sendMessage("Calculate 15 * 7", accessToken);
-  // await client.sendMessage("Weather in London", accessToken);
-  // await client.sendMessage('Translate "hello" to Spanish', accessToken);
+  await client.sendMessage("Calculate 15 * 7", accessToken);
+  await client.sendMessage("Weather in London", accessToken);
+  await client.sendMessage('Translate "hello" to Spanish', accessToken);
   console.log("\n🎉 Bearer token flow test completed!\n");
 }
 
@@ -388,6 +388,12 @@ function startWebhookReceiver(client: TestAgentClient) {
 }
 
 async function testPushNotification(client: TestAgentClient) {
+  if (process.env.ASYNC_EXECUTION === "false" || !process.env.ASYNC_EXECUTION) {
+    console.log(
+      "🚨 Async execution is disabled. Push notification test will fail."
+    );
+    return;
+  }
   const webhookUrl = process.env.WEBHOOK_URL || "http://localhost:4000/webhook";
   const pushNotification: PushNotificationConfig = {
     url: webhookUrl,
@@ -435,12 +441,12 @@ async function main() {
   const client = new TestAgentClient(config);
   await client.checkPlanBalance();
   startWebhookReceiver(client);
-  await testBearerTokenFlow(client);
+  // await testBearerTokenFlow(client);
   // await testInvalidBearerTokens(client);
   // await testMixedTokenScenarios(client);
   // await testStreamingSSE(client);
-  // await testPushNotification(client);
-  // await testErrorHandling(client);
+  await testPushNotification(client);
+  await testErrorHandling(client);
 }
 
 if (require.main === module) {
