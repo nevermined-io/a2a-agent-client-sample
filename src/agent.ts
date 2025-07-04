@@ -13,7 +13,7 @@ import "dotenv/config";
 // IMPORTS
 // ============================================================================
 
-import { Payments, a2a } from "@nevermined-io/payments";
+import { Payments } from "@nevermined-io/payments";
 import type {
   AgentCard,
   TaskHandlerResult,
@@ -23,8 +23,6 @@ import type {
   RequestContext,
 } from "@nevermined-io/payments";
 import { v4 as uuidv4 } from "uuid";
-
-const { buildPaymentAgentCard } = a2a;
 
 // ============================================================================
 // CONFIGURATION
@@ -58,7 +56,7 @@ const baseAgentCard: AgentCard = {
   name: "AI Assistant",
   description:
     "An AI assistant with multiple capabilities including calculations, weather, translations, and more. Each operation has different credit costs based on complexity.",
-  url: "http://localhost:41243/",
+  url: "http://localhost:41243/a2a/",
   provider: {
     organization: "Nevermined",
     url: "https://nevermined.io",
@@ -131,7 +129,7 @@ const baseAgentCard: AgentCard = {
 /**
  * Build the AgentCard with payment information using the A2A extension.
  */
-const agentCard = buildPaymentAgentCard(baseAgentCard, {
+const agentCard = Payments.a2a.buildPaymentAgentCard(baseAgentCard, {
   paymentType: "dynamic",
   credits: 1, // Base cost
   costDescription:

@@ -154,9 +154,6 @@ class TestAgentClient {
           role: "user",
           parts: [{ kind: "text", text: message }],
         },
-        configuration: {
-          blocking: false,
-        },
       },
     };
     const headers: Record<string, string> = {
@@ -441,10 +438,10 @@ async function main() {
   const client = new TestAgentClient(config);
   await client.checkPlanBalance();
   startWebhookReceiver(client);
-  // await testBearerTokenFlow(client);
-  // await testInvalidBearerTokens(client);
-  // await testMixedTokenScenarios(client);
-  // await testStreamingSSE(client);
+  await testBearerTokenFlow(client);
+  await testInvalidBearerTokens(client);
+  await testMixedTokenScenarios(client);
+  await testStreamingSSE(client);
   await testPushNotification(client);
   await testErrorHandling(client);
 }
