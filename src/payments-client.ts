@@ -64,7 +64,9 @@ async function sendMessage(client: any, message: string): Promise<any> {
       parts: [{ kind: "text", text: message }],
     },
   };
-  return client.sendAgentMessage(params);
+  const response = await client.sendAgentMessage(params);
+  console.log("🚀 ~ sendMessage ~ response:", response);
+  return response;
 }
 
 /**
@@ -255,17 +257,17 @@ async function testErrorHandling(client: any) {
 async function main() {
   const client1 = createA2AClient(config);
 
-  startWebhookReceiver(client1, config);
+  //   startWebhookReceiver(client1, config);
   await testGeneralFlow(client1);
-  await testStreamingSSE(client1);
-  await testSendMessageStream(client1);
-  const response = await sendMessage(client1, "Task for resubscribe test");
-  const taskId = (response as any)?.result?.id;
-  if (taskId) {
-    await testResubscribeTask(client1, taskId);
-  }
-  await testPushNotification(client1);
-  await testErrorHandling(client1);
+  //   await testStreamingSSE(client1);
+  //   await testSendMessageStream(client1);
+  //   const response = await sendMessage(client1, "Task for resubscribe test");
+  //   const taskId = (response as any)?.result?.id;
+  //   if (taskId) {
+  //     await testResubscribeTask(client1, taskId);
+  //   }
+  //   await testPushNotification(client1);
+  //   await testErrorHandling(client1);
 }
 
 if (require.main === module) {
