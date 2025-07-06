@@ -215,11 +215,31 @@ async function testPushNotification(client: any) {
 }
 
 /**
- * Test: Error Handling (stub)
+ * Test: Error handling in the A2A payments client.
+ * Sends an invalid message to the agent and verifies that the error is properly caught and logged.
  */
 async function testErrorHandling(client: any) {
-  // TODO: Implement error handling test using the RegisteredPaymentsClient API
-  throw new Error("testErrorHandling not implemented yet.");
+  console.log("\n🧪 Testing error handling\n");
+  // Create a message with an invalid 'parts' value (empty array), which should trigger a server-side error but satisfy the type.
+  const messageId = uuidv4();
+  const params: MessageSendParams = {
+    message: {
+      messageId,
+      role: "user",
+      kind: "message",
+      parts: [], // Intentionally invalid: empty array is not allowed semantically
+    },
+  };
+  try {
+    // Try sending the malformed message
+    await client.sendA2AMessage(params);
+    console.error(
+      "❌ Error: The agent did not throw an error for a malformed message."
+    );
+  } catch (err) {
+    const error = err as Error;
+    console.log("✅ Error correctly caught:", error.message || error);
+  }
 }
 
 /**
