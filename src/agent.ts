@@ -611,7 +611,7 @@ class Executor implements AgentExecutor {
         operationType: "streaming",
         streamingType: "text",
       },
-      state: "working",
+      state: "completed",
     };
   }
 

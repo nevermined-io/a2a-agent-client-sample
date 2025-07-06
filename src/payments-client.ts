@@ -64,7 +64,7 @@ async function sendMessage(client: any, message: string): Promise<any> {
       parts: [{ kind: "text", text: message }],
     },
   };
-  const response = await client.sendAgentMessage(params);
+  const response = await client.sendA2AMessage(params);
   console.log("🚀 ~ sendMessage ~ response:", response);
   return response;
 }
@@ -74,7 +74,7 @@ async function sendMessage(client: any, message: string): Promise<any> {
  */
 async function getTask(client: any, taskId: string): Promise<GetTaskResponse> {
   const params = { id: taskId };
-  return client.getAgentTask(params);
+  return client.getA2ATask(params);
 }
 
 /**
@@ -85,7 +85,7 @@ async function setPushNotificationConfig(
   taskId: string,
   pushNotificationConfig: PushNotificationConfig
 ): Promise<SetTaskPushNotificationConfigResponse> {
-  return client.setAgentTaskPushNotificationConfig({
+  return client.setA2ATaskPushNotificationConfig({
     taskId,
     pushNotificationConfig,
   });
@@ -138,7 +138,7 @@ async function testStreamingSSE(client: any) {
     },
   };
   try {
-    const stream = await client.sendAgentMessageStream(params);
+    const stream = await client.sendA2AMessageStream(params);
     for await (const event of stream) {
       console.log("[Streaming Event]", event);
       if (event?.result?.status?.final === true) {
@@ -153,41 +153,12 @@ async function testStreamingSSE(client: any) {
 }
 
 /**
- * Test: sendMessageStream (streaming) using the modern RegisteredPaymentsClient API
- */
-async function testSendMessageStream(client: any) {
-  console.log("\n🧪 Testing sendMessageStream (streaming)\n");
-  const messageId = uuidv4();
-  const params: MessageSendParams = {
-    message: {
-      messageId,
-      role: "user",
-      kind: "message",
-      parts: [{ kind: "text", text: "Stream me some updates!" }],
-    },
-  };
-  try {
-    const stream = await client.sendAgentMessageStream(params);
-    for await (const event of stream) {
-      console.log("[sendMessageStream Event]", event);
-      if (event?.result?.status?.final === true) {
-        console.log("[sendMessageStream] Final event received.");
-        break;
-      }
-    }
-    console.log("✅ sendMessageStream test completed\n");
-  } catch (err) {
-    console.error("sendMessageStream error:", err);
-  }
-}
-
-/**
  * Test: resubscribeTask using the modern RegisteredPaymentsClient API
  */
 async function testResubscribeTask(client: any, taskId: string) {
   console.log("\n🧪 Testing resubscribeTask\n");
   try {
-    const stream = await client.resubscribeAgentTask({ id: taskId });
+    const stream = await client.resubscribeA2ATask({ id: taskId });
     for await (const event of stream) {
       console.log("[resubscribeTask Event]", event);
       if (event?.result?.status?.final === true) {
@@ -252,22 +223,58 @@ async function testErrorHandling(client: any) {
 }
 
 /**
+ * Test: Streaming SSE with simulated client disconnect and resubscribe.
+ * Starts a streaming session, disconnects after a few events, then resubscribes to the task.
+ */
+async function testStreamingSSEWithDisconnect(client: any) {
+  console.log("\n🧪 Testing Streaming SSE with disconnect and resubscribe\n");
+  const messageId = uuidv4();
+  const params: MessageSendParams = {
+    message: {
+      messageId,
+      role: "user",
+      kind: "message",
+      parts: [{ kind: "text", text: "Start streaming with disconnect" }],
+    },
+  };
+  let taskId: string | undefined;
+  try {
+    const stream = await client.sendA2AMessageStream(params);
+    let count = 0;
+    for await (const event of stream) {
+      console.log("[Streaming Event]", event);
+      if (!taskId && event?.id) {
+        taskId = event.id;
+      }
+      count++;
+      if (count === 3) {
+        console.log("⛔️ Simulating client disconnect after 3 events");
+        break; // Simulate disconnect
+      }
+    }
+    if (taskId) {
+      await testResubscribeTask(client, taskId);
+    } else {
+      console.error("Could not obtain taskId for resubscribe test");
+    }
+  } catch (err) {
+    console.error("Streaming SSE error:", err);
+  }
+}
+
+/**
  * Main entrypoint to run all test scenarios for the A2A payments client.
  */
 async function main() {
   const client1 = createA2AClient(config);
 
-  //   startWebhookReceiver(client1, config);
+  startWebhookReceiver(client1, config);
   await testGeneralFlow(client1);
-  //   await testStreamingSSE(client1);
-  //   await testSendMessageStream(client1);
-  //   const response = await sendMessage(client1, "Task for resubscribe test");
-  //   const taskId = (response as any)?.result?.id;
-  //   if (taskId) {
-  //     await testResubscribeTask(client1, taskId);
-  //   }
-  //   await testPushNotification(client1);
-  //   await testErrorHandling(client1);
+  await testStreamingSSE(client1);
+  await testStreamingSSEWithDisconnect(client1);
+
+  await testPushNotification(client1);
+  await testErrorHandling(client1);
 }
 
 if (require.main === module) {
