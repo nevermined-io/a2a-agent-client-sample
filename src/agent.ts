@@ -33,7 +33,7 @@ import { v4 as uuidv4 } from "uuid";
  */
 const paymentsConfig = {
   environment: "local" as const,
-  nvmApiKey: process.env.PUBLISHER_API_KEY,
+  nvmApiKey: process.env.PUBLISHER_API_KEY || "MY_API_KEY",
 };
 
 /**
