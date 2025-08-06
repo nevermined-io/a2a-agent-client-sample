@@ -13,7 +13,12 @@ import "dotenv/config";
 // IMPORTS
 // ============================================================================
 
-import { Payments } from "@nevermined-io/payments";
+import {
+  Payments,
+  PlanCreditsType,
+  PlanPriceType,
+  PlanRedemptionType,
+} from "@nevermined-io/payments";
 import type {
   AgentCard,
   TaskHandlerResult,
@@ -21,19 +26,27 @@ import type {
   ExecutionEventBus,
   AgentExecutor,
   RequestContext,
+  AgentMetadata,
+  AgentAPIAttributes,
+  PlanMetadata,
+  PlanPriceConfig,
+  PlanCreditsConfig,
 } from "@nevermined-io/payments";
 import { v4 as uuidv4 } from "uuid";
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
+const ZeroAddress = "0x0000000000000000000000000000000000000000";
 
 /**
  * Configuration for the payments service.
  */
 const paymentsConfig = {
-  environment: "local" as const,
-  nvmApiKey: process.env.PUBLISHER_API_KEY || "MY_API_KEY",
+  environment: "staging_sandbox" as const,
+  nvmApiKey:
+    process.env.PUBLISHER_API_KEY ||
+    "eyJhbGciOiJFUzI1NksifQ.eyJpc3MiOiIweDU4MzhCNTUxMmNGOWYxMkZFOWYyYmVjY0IyMGViNDcyMTFGOUIwYmMiLCJzdWIiOiIweGU4QjYwMDA0ODZBMzk3MjY3N0IwNWE1NTY2OTM2QjJGOTVBMjUzZTgiLCJqdGkiOiIweDA2MjRlNThhOWJkMDAzNjI0MTJiNDQzNDg2NWQ5YzJiM2E3OWNjNmM2YTcxODU4YTM5MjE5YmM1NjUyMTgyOWIiLCJleHAiOjE3ODYwNTI3Mzh9.bkhGv9ZLDo4gL75NKlrMu9OtTnhaqWLF3XwkxGsHdKUhcG11iYl1Oe5jqbA5D73fdHrm73iYSbOUkrKQP-qyPBw",
 };
 
 /**
@@ -41,8 +54,76 @@ const paymentsConfig = {
  */
 const serverConfig = {
   port: 41243, // Different port to avoid conflicts
-  agentId: process.env.AGENT_ID || "agent-id",
-  planId: process.env.PLAN_ID || "plan",
+  agentId:
+    process.env.AGENT_ID ||
+    "did:nv:8f87ac874094cc115935b399082479119e68c542c0f40167859577f34a1bbb53",
+  planId:
+    process.env.PLAN_ID ||
+    "38903382680661089761144463553411737235237456544456064481459352422894111390695",
+  token_address: (process.env.TOKEN_ADDRESS ||
+    "0x036CbD53842c5426634e7929541eC2318f3dCF7e") as `0x${string}`,
+};
+
+// ============================================================================
+// AGENT AND PLAN CONFIGURATION
+// ============================================================================
+
+/**
+ * Configuration for the agent metadata.
+ */
+const agentMetadata: AgentMetadata = {
+  name: "AI Assistant with Payments",
+  description:
+    "An AI assistant with multiple capabilities including calculations, weather, translations, and more. Each operation has different credit costs based on complexity.",
+  tags: ["ai", "assistant", "payments", "a2a"],
+  dateCreated: new Date(),
+};
+
+/**
+ * Configuration for the agent API attributes.
+ */
+const agentApi: AgentAPIAttributes = {
+  endpoints: [{ POST: `http://localhost:${serverConfig.port}/a2a` }],
+  openEndpoints: [
+    `http://localhost:${serverConfig.port}/a2a/.well-known/agent.json`,
+  ],
+  authType: "none",
+};
+
+/**
+ * Configuration for the plan metadata.
+ */
+const planMetadata: PlanMetadata = {
+  name: "AI Assistant Credits Plan",
+  description:
+    "Plan for accessing the AI Assistant with dynamic credit costs based on operation complexity",
+  tags: ["ai", "assistant", "credits"],
+  isTrialPlan: false,
+};
+
+/**
+ * Price config for the plan
+ */
+const priceConfig: PlanPriceConfig = {
+  priceType: PlanPriceType.FIXED_PRICE,
+  tokenAddress: serverConfig.token_address,
+  amounts: [10000n], //10000 wei: 0.01 USDC for testing
+  receivers: [],
+  contractAddress: ZeroAddress,
+  feeController: ZeroAddress,
+};
+
+/**
+ * Credits config for the plan
+ */
+const creditsConfig: PlanCreditsConfig = {
+  creditsType: PlanCreditsType.DYNAMIC,
+  redemptionType: PlanRedemptionType.ONLY_OWNER,
+  proofRequired: false,
+  durationSecs: 0n,
+  amount: 1000n,
+  minAmount: 1n,
+  maxAmount: 100n,
 };
 
 // ============================================================================
@@ -250,10 +331,6 @@ class Executor implements AgentExecutor {
    */
   async cancelTask(taskId: string): Promise<void> {
     console.log(`[A2A] Cancelling task: ${taskId}`);
-    // In a real implementation, you might:
-    // - Stop ongoing API calls
-    // - Clean up resources
-    // - Update task status in database
   }
 
   // ============================================================================
@@ -932,44 +1009,180 @@ class Executor implements AgentExecutor {
 }
 
 // ============================================================================
-// SERVER INITIALIZATION
+// AGENT AND PLAN SETUP FUNCTIONS
 // ============================================================================
 
 /**
- * Initialize the payments service.
+ * Checks if an agent exists and returns its information.
+ * @param paymentsService - The payments service instance.
+ * @param agentId - The agent ID to check.
+ * @returns The agent information if it exists, null otherwise.
  */
-const paymentsService = Payments.getInstance(paymentsConfig);
+async function checkAgentExists(
+  paymentsService: any,
+  agentId: string
+): Promise<any> {
+  try {
+    const agent = await paymentsService.agents.getAgent(agentId);
+    console.log(`✅ Agent found: ${agentId}`);
+    return agent;
+  } catch (error) {
+    console.log(`❌ Agent not found: ${agentId}`);
+    return null;
+  }
+}
 
 /**
- * Start the A2A server.
- * All A2A methods are handled via JSON-RPC POST to the base endpoint.
+ * Checks if a plan exists and returns its information.
+ * @param paymentsService - The payments service instance.
+ * @param planId - The plan ID to check.
+ * @returns The plan information if it exists, null otherwise.
  */
-paymentsService.a2a.start({
-  agentCard,
-  executor: new Executor(),
-  port: serverConfig.port,
-  basePath: "/a2a/",
-  asyncExecution: process.env.ASYNC_EXECUTION === "true",
-});
+async function checkPlanExists(
+  paymentsService: any,
+  planId: string
+): Promise<any> {
+  try {
+    const plan = await paymentsService.plans.getPlan(planId);
+    console.log(`✅ Plan found: ${planId}`);
+    return plan;
+  } catch (error) {
+    console.log(`❌ Plan not found: ${planId}`);
+    return null;
+  }
+}
 
-console.log("🚀 A2A Payments Agent started successfully!");
-console.log(`📍 Server running on: http://localhost:${serverConfig.port}/a2a/`);
-console.log(
-  `📋 Agent Card: http://localhost:${serverConfig.port}/a2a/.well-known/agent.json`
-);
-console.log("");
-console.log("🧪 Test with these examples:");
-console.log("- Hello (1 credit)");
-console.log("- Calculate 15 * 7 (2 credits)");
-console.log("- Weather in London (3 credits)");
-console.log('- Translate "hello" to Spanish (4 credits)');
-console.log("- Start streaming (5 credits)");
-console.log("");
-console.log("Press Ctrl+C to stop the server");
+/**
+ * Creates a new agent and plan if they don't exist.
+ * @param paymentsService - The payments service instance.
+ * @returns An object containing the agentId and planId.
+ */
+async function setupAgentAndPlan(paymentsService: any): Promise<{
+  agentId: string;
+  planId: string;
+}> {
+  console.log("🔧 Setting up agent and plan...");
 
-// Handle graceful shutdown
-process.on("SIGINT", () => {
-  console.log("\n🛑 Shutting down A2A Payments Agent...");
-  console.log("✅ Server stopped");
-  process.exit(0);
+  // Check if agent and plan already exist
+  const existingAgent = await checkAgentExists(
+    paymentsService,
+    serverConfig.agentId
+  );
+  const existingPlan = await checkPlanExists(
+    paymentsService,
+    serverConfig.planId
+  );
+
+  if (existingAgent && existingPlan) {
+    console.log(
+      "✅ Agent and plan already exist, using existing configuration"
+    );
+    return {
+      agentId: serverConfig.agentId,
+      planId: serverConfig.planId,
+    };
+  }
+
+  // If either doesn't exist, create both
+  console.log("🆕 Creating new agent and plan...");
+
+  priceConfig.receivers = [paymentsService.getAccountAddress()];
+
+  try {
+    const result = await paymentsService.agents.registerAgentAndPlan(
+      agentMetadata,
+      agentApi,
+      planMetadata,
+      priceConfig,
+      creditsConfig
+    );
+
+    console.log(`✅ Agent and plan created successfully!`);
+    console.log(`   Agent ID: ${result.agentId}`);
+    console.log(`   Plan ID: ${result.planId}`);
+    console.log(`   Transaction Hash: ${result.txHash}`);
+
+    return {
+      agentId: result.agentId,
+      planId: result.planId,
+    };
+  } catch (error) {
+    console.error("❌ Error creating agent and plan:", error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// MAIN FUNCTION
+// ============================================================================
+
+/**
+ * Main function that sets up the agent and plan, then starts the A2A server.
+ */
+async function main() {
+  try {
+    console.log("🚀 Starting A2A Payments Agent setup...");
+
+    // Initialize the payments service
+    const paymentsService = Payments.getInstance(paymentsConfig);
+
+    // Setup agent and plan
+    const { agentId, planId } = await setupAgentAndPlan(paymentsService);
+
+    // Update server config with the actual IDs
+    serverConfig.agentId = agentId;
+    serverConfig.planId = planId;
+
+    // Update agent card with the actual IDs
+    const updatedAgentCard = Payments.a2a.buildPaymentAgentCard(baseAgentCard, {
+      paymentType: "dynamic",
+      credits: 1, // Base cost
+      costDescription:
+        "Variable credits based on operation complexity: Greeting (1), Calculation (2), Weather (3), Translation (4), Streaming (5)",
+      planId: serverConfig.planId,
+      agentId: serverConfig.agentId,
+    });
+
+    // Start the A2A server
+    console.log("🌐 Starting A2A server...");
+    paymentsService.a2a.start({
+      agentCard: updatedAgentCard,
+      executor: new Executor(),
+      port: serverConfig.port,
+      basePath: "/a2a/",
+    });
+
+    console.log("🚀 A2A Payments Agent started successfully!");
+    console.log(
+      `📍 Server running on: http://localhost:${serverConfig.port}/a2a/`
+    );
+    console.log(
+      `📋 Agent Card: http://localhost:${serverConfig.port}/a2a/.well-known/agent.json`
+    );
+    console.log("");
+    console.log("🧪 Test with these examples:");
+    console.log("- Hello (1 credit)");
+    console.log("- Calculate 15 * 7 (2 credits)");
+    console.log("- Weather in London (3 credits)");
+    console.log('- Translate "hello" to Spanish (4 credits)');
+    console.log("- Start streaming (5 credits)");
+    console.log("");
+    console.log("Press Ctrl+C to stop the server");
+
+    // Handle graceful shutdown
+    process.on("SIGINT", () => {
+      console.log("\n🛑 Shutting down A2A Payments Agent...");
+      console.log("✅ Server stopped");
+      process.exit(0);
+    });
+  } catch (error) {
+    console.error("❌ Error in main function:", error);
+    process.exit(1);
+  }
+}
+
+// Start the application
+main().catch((error) => {
+  console.error("❌ Failed to start application:", error);
+  process.exit(1);
 });

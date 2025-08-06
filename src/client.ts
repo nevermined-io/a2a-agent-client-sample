@@ -1,14 +1,10 @@
-/**
- * Advanced client to interact with the advanced A2A agent via JSON-RPC.
- * Tests various AI capabilities with different credit costs.
- * Includes bearer token authentication support.
- */
-import fetch from "node-fetch";
-import { Readable } from "stream";
 import {
   Payments,
-  PushNotificationConfig,
   EnvironmentName,
+  MessageSendParams,
+  GetTaskResponse,
+  SetTaskPushNotificationConfigResponse,
+  PushNotificationConfig,
 } from "@nevermined-io/payments";
 import { v4 as uuidv4 } from "uuid";
 import "dotenv/config";
@@ -24,355 +20,90 @@ interface AgentTestConfig {
 
 function loadConfig(): AgentTestConfig {
   const { SUBSCRIBER_API_KEY, PLAN_ID, AGENT_ID } = process.env;
-  if (!SUBSCRIBER_API_KEY || !PLAN_ID || !AGENT_ID) {
-    throw new Error(
-      "Missing required environment variables: SUBSCRIBER_API_KEY, PLAN_ID, AGENT_ID"
-    );
-  }
+
+  // Default values when not provided via environment variables
+  const defaultSubscriberApiKey =
+    "eyJhbGciOiJFUzI1NksifQ.eyJpc3MiOiIweDU4MzhCNTUxMmNGOWYxMkZFOWYyYmVjY0IyMGViNDcyMTFGOUIwYmMiLCJzdWIiOiIweDEzOTgzNERGN2MxODE4OEU4RjczM0JDMTFFOUU1OTdCODg1NjNCNTkiLCJqdGkiOiIweDM4ZTY2ZTBhYTM4ZGRhZWY5YjQ2ZjlhY2IwYjY1MjljNGRjYjczZWZjMTEwMWNiODhkMjczZWEwMzNhMTU5YTIiLCJleHAiOjE3ODYwNjU0ODJ9.nhsDccnsdCIL39I9_seeIqbwsV9TpisdX8OhrE3dzIUwURN5d9eS7YamKPct33GC9Ja8_cTa5QalQiFMhQe-8hw";
+  const defaultPlanId =
+    "38903382680661089761144463553411737235237456544456064481459352422894111390695";
+  const defaultAgentId =
+    "did:nv:8f87ac874094cc115935b399082479119e68c542c0f40167859577f34a1bbb53";
+
   return {
-    environment: "local",
-    nvmApiKey: SUBSCRIBER_API_KEY,
-    planId: PLAN_ID,
-    agentId: AGENT_ID,
+    environment: "staging_sandbox",
+    nvmApiKey: SUBSCRIBER_API_KEY || defaultSubscriberApiKey,
+    planId: PLAN_ID || defaultPlanId,
+    agentId: AGENT_ID || defaultAgentId,
     baseUrl: "http://localhost:41243/a2a",
   };
 }
 
 const config = loadConfig();
+const payments = Payments.getInstance({
+  environment: config.environment,
+  nvmApiKey: config.nvmApiKey,
+});
 
-class TestAgentClient {
-  paymentsService: any;
-  config: AgentTestConfig;
-  constructor(config: AgentTestConfig) {
-    this.config = config;
-    this.paymentsService = Payments.getInstance({
-      environment: config.environment,
-      nvmApiKey: config.nvmApiKey,
-    });
-  }
-  async getAccessToken(): Promise<string | null> {
-    const { planId, agentId } = this.config;
-    if (!planId || !agentId) {
-      console.error("Missing PLAN_ID or AGENT_ID in environment variables");
-      return null;
-    }
-    try {
-      const accessParams = await this.paymentsService.getAgentAccessToken(
-        planId,
-        agentId
-      );
-      return accessParams.accessToken;
-    } catch (error: any) {
-      console.error(`Failed to get access token: ${error.message}`);
-      return null;
-    }
-  }
-
-  async getAgentBalance(): Promise<any | null> {
-    const { planId } = this.config;
-    if (!planId) {
-      console.error("Missing PLAN_ID in environment variables");
-      return null;
-    }
-    const balance = await this.paymentsService.getPlanBalance(planId);
-    console.log("Agent balance:", JSON.stringify(balance, null, 2));
-    return balance;
-  }
-
-  async checkPlanBalance(): Promise<any | null> {
-    const balance = await this.getAgentBalance();
-    if (!balance.balance.isSubscriber) {
-      //purchase plan
-      const { planId } = this.config;
-      if (!planId) {
-        console.error("Missing PLAN_ID in environment variables");
-        return null;
-      }
-      const purchaseResult = await this.paymentsService.orderPlan(planId);
-      console.log("Purchase result:", JSON.stringify(purchaseResult, null, 2));
-      return purchaseResult;
-    }
-    if (balance.balance.isSubscriber) {
-      console.log("Agent is a subscriber");
-    }
-  }
-
-  async fetchAgentCard(): Promise<any | null> {
-    const url = `${this.config.baseUrl}/.well-known/agent.json`;
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        console.error(`HTTP ${response.status}: ${response.statusText}`);
-        return null;
-      }
-      const agentCard = await response.json();
-      console.log("Agent Card:", JSON.stringify(agentCard, null, 2));
-      return agentCard;
-    } catch (err) {
-      console.error(`Failed to fetch agent card: ${err}`);
-      return null;
-    }
-  }
-
-  async getTask(taskId: string): Promise<any | null> {
-    const payload = {
-      jsonrpc: "2.0",
-      method: "tasks/get",
-      params: {
-        id: taskId,
-      },
-    };
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    const response = await fetch(this.config.baseUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      console.error(`HTTP Error ${response.status}: ${response.statusText}`);
-      return null;
-    }
-    return response.json();
-  }
-
-  /**
-   * Sends a JSON-RPC request to the A2A agent with optional bearer token and push notification config.
-   * @param message - The user message to send.
-   * @param bearerToken - Optional bearer token for authentication.
-   * @returns The full agent response (including taskId if present).
-   */
-  async sendMessage(message: string, bearerToken?: string) {
-    const messageId = uuidv4();
-    const payload = {
-      jsonrpc: "2.0",
-      method: "message/send",
-      params: {
-        message: {
-          messageId,
-          role: "user",
-          parts: [{ kind: "text", text: message }],
-        },
-      },
-    };
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (bearerToken) headers["Authorization"] = `Bearer ${bearerToken}`;
-    try {
-      const response = await fetch(this.config.baseUrl, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        console.error(`HTTP Error ${response.status}: ${response.statusText}`);
-        return null;
-      }
-      const data = await response.json();
-      if (data && typeof data === "object" && "error" in data && data.error) {
-        console.error("Error from agent:", data.error);
-        return data;
-      } else if (data && typeof data === "object" && "result" in data) {
-        console.log("Agent response:", JSON.stringify(data.result, null, 2));
-        return data;
-      }
-      return data;
-    } catch (err) {
-      console.error(`Request failed: ${err}`);
-      return null;
-    }
-  }
-  /**
-   * Sends a streaming JSON-RPC request to the A2A agent with optional push notification config.
-   * @param message - The user message to send.
-   * @param bearerToken - Optional bearer token for authentication.
-   * @param pushNotification - Optional push notification config to be sent with the request.
-   *
-   * According to the A2A standard, pushNotification must be a sibling of 'message' in 'params',
-   * not inside 'message'.
-   */
-  async sendStreamingMessage(
-    message: string,
-    bearerToken?: string,
-    pushNotification?: any
-  ) {
-    const messageId = uuidv4();
-    const payload = {
-      jsonrpc: "2.0",
-      method: "message/stream",
-      params: {
-        message: {
-          messageId,
-          role: "user",
-          parts: [{ kind: "text", text: message }],
-        },
-      },
-    };
-    // Per A2A standard, pushNotification must be a sibling of 'message' in 'params'
-    if (pushNotification)
-      (payload.params as any).pushNotification = pushNotification;
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (bearerToken) headers["Authorization"] = `Bearer ${bearerToken}`;
-    const response = await fetch(this.config.baseUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      console.error(`Failed to initiate streaming: ${response.statusText}`);
-      return;
-    }
-    console.log("Streaming request sent. Processing SSE events...");
-    const nodeStream = response.body as unknown as Readable;
-    let buffer = "";
-    let streamClosed = false;
-    nodeStream.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString("utf8");
-      let eventEnd;
-      while ((eventEnd = buffer.indexOf("\n\n")) !== -1) {
-        const rawEvent = buffer.slice(0, eventEnd);
-        buffer = buffer.slice(eventEnd + 2);
-        const dataLine = rawEvent
-          .split("\n")
-          .find((line) => line.startsWith("data:"));
-        if (dataLine) {
-          try {
-            const data = JSON.parse(dataLine.slice(5).trim());
-            console.log("[Streaming Event]", data);
-            if (data?.result?.status?.final === true) {
-              console.log(
-                "[Streaming Event] Final event received. Closing stream."
-              );
-              streamClosed = true;
-              nodeStream.destroy();
-              break;
-            }
-          } catch (err) {
-            console.error("[Streaming Event] Error parsing event:", err);
-          }
-        }
-      }
-    });
-    nodeStream.on("end", () => {
-      if (!streamClosed) {
-        console.log("SSE stream closed by server.");
-      }
-    });
-    nodeStream.on("error", (err) => {
-      console.error("SSE stream error:", err);
-    });
-  }
-  /**
-   * Sets the push notification configuration for a given task using the A2A standard.
-   * @param taskId - The ID of the task.
-   * @param pushNotificationConfig - The push notification configuration object.
-   * @param bearerToken - Optional bearer token for authentication.
-   */
-  async setPushNotificationConfig(
-    taskId: string,
-    pushNotificationConfig: any,
-    bearerToken?: string
-  ) {
-    const payload = {
-      jsonrpc: "2.0",
-      method: "tasks/pushNotificationConfig/set",
-      params: {
-        taskId,
-        pushNotificationConfig,
-      },
-      id: 1,
-    };
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (bearerToken) headers["Authorization"] = `Bearer ${bearerToken}`;
-    try {
-      const response = await fetch(this.config.baseUrl, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        console.error(`HTTP Error ${response.status}: ${response.statusText}`);
-        return false;
-      }
-      const data = await response.json();
-      if (data && typeof data === "object" && "error" in data && data.error) {
-        console.error(
-          "Error from agent (pushNotificationConfig/set):",
-          data.error
-        );
-        return false;
-      }
-      return true;
-    } catch (err) {
-      console.error(`Request failed (pushNotificationConfig/set): ${err}`);
-      return false;
-    }
-  }
+/**
+ * Creates a new A2A client instance for a given agent config.
+ */
+function createA2AClient(cfg: AgentTestConfig) {
+  return payments.a2a.getClient({
+    agentBaseUrl: cfg.baseUrl,
+    agentId: cfg.agentId,
+    planId: cfg.planId,
+  });
 }
 
-async function testBearerTokenFlow(client: TestAgentClient) {
-  console.log("\n🧪 Testing A2A Payments Bearer Token Flow\n");
-  const agentCard = await client.fetchAgentCard();
-  if (!agentCard) return;
-  const accessToken = await client.getAccessToken();
-  if (!accessToken) return;
-  await client.sendMessage("Hello there!", accessToken);
-  await client.sendMessage("Calculate 15 * 7", accessToken);
-  await client.sendMessage("Weather in London", accessToken);
-  await client.sendMessage('Translate "hello" to Spanish', accessToken);
-  console.log("\n🎉 Bearer token flow test completed!\n");
+/**
+ * Sends a message to the agent using automatic token management.
+ */
+async function sendMessage(client: any, message: string): Promise<any> {
+  const messageId = uuidv4();
+  const params: MessageSendParams = {
+    message: {
+      messageId,
+      role: "user",
+      kind: "message",
+      parts: [{ kind: "text", text: message }],
+    },
+  };
+  const response = await client.sendA2AMessage(params);
+  console.log("🚀 ~ sendMessage ~ response:", response);
+  return response;
 }
 
-async function testInvalidBearerTokens(client: TestAgentClient) {
-  console.log("\n🧪 Testing Invalid Bearer Token Handling\n");
-  await client.sendMessage("Calculate 2+2", "undefined");
-  await client.sendMessage("Weather in Tokyo", "null");
-  await client.sendMessage('Translate "goodbye" to French', "fake.token.here");
-  await client.sendMessage("Start streaming", "not-a-jwt-token");
-  await client.sendMessage("Hello");
-  await client.sendMessage("What is (25 + 15) * 2 / 4?", "");
-  console.log("\n🎉 Invalid bearer token tests completed!\n");
+/**
+ * Retrieves a task by its ID using automatic token management.
+ */
+async function getTask(client: any, taskId: string): Promise<GetTaskResponse> {
+  const params = { id: taskId };
+  return client.getA2ATask(params);
 }
 
-async function testMixedTokenScenarios(client: TestAgentClient) {
-  console.log("\n🧪 Testing Mixed Token Scenarios\n");
-  const accessToken = await client.getAccessToken();
-  if (!accessToken) return;
-  await client.sendMessage("Hello", accessToken);
-  await client.sendMessage("Calculate 5+5", "invalid-token");
-  await client.sendMessage("Weather in Paris", "invalid-token");
-  await client.sendMessage("Weather in Paris", accessToken);
-  await client.sendMessage("Hello", accessToken);
-  await client.sendMessage("Calculate 10 * 3", accessToken);
-  await client.sendMessage("Weather in Berlin", accessToken);
-  await client.sendMessage('Translate "thank you" to German', accessToken);
-  console.log("\n🎉 Mixed token scenarios completed!\n");
+/**
+ * Sets the push notification configuration for a given task.
+ */
+async function setPushNotificationConfig(
+  client: any,
+  taskId: string,
+  pushNotificationConfig: PushNotificationConfig
+): Promise<SetTaskPushNotificationConfigResponse> {
+  return client.setA2ATaskPushNotificationConfig({
+    taskId,
+    pushNotificationConfig,
+  });
 }
 
-async function testStreamingSSE(client: TestAgentClient) {
-  console.log("\n🧪 Testing Streaming SSE\n");
-  const accessToken = await client.getAccessToken();
-  if (!accessToken) {
-    console.error("No access token for streaming test");
-    return;
-  }
-  client.sendStreamingMessage("Start streaming", accessToken);
-  await new Promise((resolve) => setTimeout(resolve, 61000));
-  console.log("✅ Streaming SSE test completed\n");
-}
-
-function startWebhookReceiver(client: TestAgentClient) {
+/**
+ * Starts a webhook receiver for push notifications.
+ */
+function startWebhookReceiver(client: any) {
   const app = express();
   app.use(express.json());
   app.post("/webhook", async (req, res) => {
     console.log("[Webhook] Notification received:", req.body);
-    const task = await client.getTask(req.body.taskId);
+    const task = await getTask(client, req.body.taskId);
     console.log("[Webhook] Task:", JSON.stringify(task, null, 2));
     res.status(200).send("OK");
   });
@@ -384,7 +115,71 @@ function startWebhookReceiver(client: TestAgentClient) {
   });
 }
 
-async function testPushNotification(client: TestAgentClient) {
+/**
+ * Test: General Flow
+ */
+async function testGeneralFlow(client: any) {
+  console.log("\n🧪 Testing A2A Payments General Flow\n");
+  await sendMessage(client, "Hello there!");
+  await sendMessage(client, "Calculate 15 * 7");
+  await sendMessage(client, "Weather in London");
+  await sendMessage(client, 'Translate "hello" to Spanish');
+  console.log("\n🎉 General flow test completed!\n");
+}
+
+/**
+ * Test: Streaming SSE using the modern RegisteredPaymentsClient API
+ */
+async function testStreamingSSE(client: any) {
+  console.log("\n🧪 Testing Streaming SSE\n");
+  const messageId = uuidv4();
+  const params: MessageSendParams = {
+    message: {
+      messageId,
+      role: "user",
+      kind: "message",
+      parts: [{ kind: "text", text: "Start streaming" }],
+    },
+  };
+  try {
+    const stream = await client.sendA2AMessageStream(params);
+    for await (const event of stream) {
+      console.log("[Streaming Event]", event);
+      if (event?.result?.status?.final === true) {
+        console.log("[Streaming Event] Final event received.");
+        break;
+      }
+    }
+    console.log("✅ Streaming SSE test completed\n");
+  } catch (err) {
+    console.error("Streaming SSE error:", err);
+  }
+}
+
+/**
+ * Test: resubscribeTask using the modern RegisteredPaymentsClient API
+ */
+async function testResubscribeTask(client: any, taskId: string) {
+  console.log("\n🧪 Testing resubscribeTask\n");
+  try {
+    const stream = await client.resubscribeA2ATask({ id: taskId });
+    for await (const event of stream) {
+      console.log("[resubscribeTask Event]", event);
+      if (event?.result?.status?.final === true) {
+        console.log("[resubscribeTask] Final event received.");
+        break;
+      }
+    }
+    console.log("✅ resubscribeTask test completed\n");
+  } catch (err) {
+    console.error("resubscribeTask error:", err);
+  }
+}
+
+/**
+ * Test: Push Notification using the modern RegisteredPaymentsClient API
+ */
+async function testPushNotification(client: any) {
   if (process.env.ASYNC_EXECUTION === "false" || !process.env.ASYNC_EXECUTION) {
     console.log(
       "🚨 Async execution is disabled. Push notification test will fail."
@@ -400,25 +195,18 @@ async function testPushNotification(client: TestAgentClient) {
       schemes: ["bearer"],
     },
   };
-  const accessToken = await client.getAccessToken();
-  if (!accessToken) return;
-  console.log("\n🧪 Testing push notification support (A2A standard flow)\n");
-  // 1. Send message with push notification request
-  const response = await client.sendMessage(
-    "Testing push notification!",
-    accessToken
-  );
-  // 2. Extract the taskId from the response
+  // 1. Send message to create a task
+  const response = await sendMessage(client, "Testing push notification!");
   let taskId = (response as any)?.result?.id;
   if (!taskId) {
     console.error("No taskId found in response:", response);
     return;
   }
-  // 3. Associate the pushNotification config
-  const setResult = await client.setPushNotificationConfig(
+  // 2. Associate the pushNotification config
+  const setResult = await setPushNotificationConfig(
+    client,
     taskId,
-    pushNotification,
-    accessToken
+    pushNotification
   );
   if (!setResult) {
     console.error("Failed to set push notification config");
@@ -430,20 +218,98 @@ async function testPushNotification(client: TestAgentClient) {
   );
 }
 
-async function testErrorHandling(client: TestAgentClient) {
-  console.log("[Test] testErrorHandling not implemented yet.");
+/**
+ * Test: Error handling in the A2A payments client.
+ * Sends an invalid message to the agent and verifies that the error is properly caught and logged.
+ */
+async function testErrorHandling(client: any) {
+  console.log("\n🧪 Testing error handling\n");
+  // Create a message with an invalid 'parts' value (empty array), which should trigger a server-side error but satisfy the type.
+  const messageId = uuidv4();
+  const params: MessageSendParams = {
+    message: {
+      messageId,
+      role: "user",
+      kind: "message",
+      parts: [], // Intentionally invalid: empty array is not allowed semantically
+    },
+  };
+  try {
+    // Try sending the malformed message
+    await client.sendA2AMessage(params);
+    console.error(
+      "❌ Error: The agent did not throw an error for a malformed message."
+    );
+  } catch (err) {
+    const error = err as Error;
+    console.log("✅ Error correctly caught:", error.message || error);
+  }
 }
 
+/**
+ * Test: Streaming SSE with simulated client disconnect and resubscribe.
+ * Starts a streaming session, disconnects after a few events, then resubscribes to the task.
+ */
+async function testStreamingSSEWithDisconnect(client: any) {
+  console.log("\n🧪 Testing Streaming SSE with disconnect and resubscribe\n");
+  const messageId = uuidv4();
+  const params: MessageSendParams = {
+    message: {
+      messageId,
+      role: "user",
+      kind: "message",
+      parts: [{ kind: "text", text: "Start streaming with disconnect" }],
+    },
+  };
+  let taskId: string | undefined;
+  try {
+    const stream = await client.sendA2AMessageStream(params);
+    let count = 0;
+    for await (const event of stream) {
+      console.log("[Streaming Event]", event);
+      if (!taskId && event?.id) {
+        taskId = event.id;
+      }
+      count++;
+      if (count === 3) {
+        console.log("⛔️ Simulating client disconnect after 3 events");
+        break; // Simulate disconnect
+      }
+    }
+    if (taskId) {
+      await testResubscribeTask(client, taskId);
+    } else {
+      console.error("Could not obtain taskId for resubscribe test");
+    }
+  } catch (err) {
+    console.error("Streaming SSE error:", err);
+  }
+}
+
+async function checkPlanBalance(config: AgentTestConfig) {
+  const balance = await payments.plans.getPlanBalance(config.planId);
+  console.log("💰 Plan balance:", balance.balance);
+  if (balance.balance.toString() === "0") {
+    console.log("🚨 Plan balance is 0. Purchasing plan...");
+    const result = await payments.plans.orderPlan(config.planId);
+    console.log("💰 Plan purchased:", result);
+  }
+}
+
+/**
+ * Main entrypoint to run all test scenarios for the A2A payments client.
+ */
 async function main() {
-  const client = new TestAgentClient(config);
-  await client.checkPlanBalance();
-  startWebhookReceiver(client);
-  await testBearerTokenFlow(client);
-  await testInvalidBearerTokens(client);
-  await testMixedTokenScenarios(client);
-  await testStreamingSSE(client);
-  await testPushNotification(client);
-  await testErrorHandling(client);
+  await checkPlanBalance(config);
+  const client1 = createA2AClient(config);
+
+  startWebhookReceiver(client1);
+  await testGeneralFlow(client1);
+  await testStreamingSSE(client1);
+  await testStreamingSSEWithDisconnect(client1);
+
+  await testPushNotification(client1);
+  await testErrorHandling(client1);
 }
 
 if (require.main === module) {
